@@ -52,8 +52,26 @@ def main():
     model_ids = [m["id"] for m in models.get("data", [])]
     print(f"      Served Models ({len(model_ids)}): {', '.join(model_ids[:6])}...")
 
-    # 2. 1-Stream Code Decode Speed
+    # 2. 1-Stream Prose & Pure Code Decode Speed
     max_toks = 128 if args.quick else 512
+    resp_prose, _, elapsed_prose = post_json(
+        f"{base}/v1/chat/completions",
+        {
+            "model": "DeepSeek-V4.1-Flash-1017",
+            "reasoning_effort": "none",
+            "max_tokens": max_toks,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Explain how modern CPU branch predictors, reorder buffers, and speculative execution work together.",
+                }
+            ],
+        },
+    )
+    prose_toks = resp_prose["usage"]["completion_tokens"]
+    prose_tps = prose_toks / elapsed_prose if elapsed_prose > 0 else 0.0
+    print(f"[2a/5] 1-Stream Prose Decode: {prose_toks} tokens in {elapsed_prose:.2f}s -> {prose_tps:.1f} tok/s")
+
     resp, hdrs, elapsed = post_json(
         f"{base}/v1/chat/completions",
         {
@@ -64,14 +82,14 @@ def main():
             "messages": [
                 {
                     "role": "user",
-                    "content": "Write a complete, well-commented Python implementation of a lock-free ring buffer with unit tests.",
+                    "content": "Output only raw Python code (no comments, no markdown prose) implementing a red-black tree with insert, delete, and range query methods.",
                 }
             ],
         },
     )
     comp_toks = resp["usage"]["completion_tokens"]
     code_tps = comp_toks / elapsed if elapsed > 0 else 0.0
-    print(f"[2/5] 1-Stream Code Decode: {comp_toks} tokens in {elapsed:.2f}s -> {code_tps:.1f} tok/s")
+    print(f"[2b/5] 1-Stream Code Decode:  {comp_toks} tokens in {elapsed:.2f}s -> {code_tps:.1f} tok/s")
 
     # 3. Reasoning Effort ("max" -> "xhigh")
     resp_max, hdrs_max, _ = post_json(

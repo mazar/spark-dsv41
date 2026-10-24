@@ -77,7 +77,7 @@ fi
 
 # 2. Check for running Spark-GLM53 containers or 85 GiB CUDA IPC weight daemon
 if [[ "$DRY_RUN" != "1" ]]; then
-    if docker ps --format '{{.Names}}' | grep -qE '^spark-glm53' || pgrep -f "spark-cuda-ipc-weights|spark-shm-weights" >/dev/null 2>&1; then
+    if docker ps --format '{{.Names}}' | grep -qE '^spark-glm53' || pgrep -f "[s]park-cuda-ipc-weights|[s]park-shm-weights" >/dev/null 2>&1; then
         if [[ "$SWITCH_FROM_GLM53" == "1" ]]; then
             log "Stopping active Spark-GLM53 engine and freeing 85 GiB weight daemon (--switch-from-glm53)..."
             if [[ -x /home/massoud/spark-glm53/stop.sh ]]; then
@@ -133,7 +133,7 @@ if [[ "$ENGINE_BACKEND" == "zig" ]]; then
     BUDGET_ARGS=""
     [[ -n "$THINKING_BUDGET" ]] && BUDGET_ARGS="--thinking-budget ${THINKING_BUDGET}"
 
-    HEAD_CMD="docker run -d --name ${CONTAINER_NAME} ${COMMON_ARGS} -v ${HF_CACHE}:/hf:ro -e TF_TP_WORLD=2 -e TF_TP_MASTER=${HEAD_IP} -e TF_TP_PORT=${MASTER_PORT} -e TF_DS_RANK_CACHE=/hf/${DATA_SUB}/rank-cache -e TF_DS_KIT=/hf/${KIT_SUB} -e TENSORFOLD_CUDA_KERNELS=/hf/${KIT_SUB}/aot -e TF_DS_ENGRAM=${ENGRAM_IN_CONTAINER} -e TF_DS_TOKEN_MAP=/hf/${DATA_SUB}/dsv41_token_map.json -e TF_DS_GRAPHS=1 -e TF_DS_HC_SIDE=1 -e TF_DS_L2_PREFETCH=1 -e TF_DS_ENGRAM_AIO=1 -e TF_RDMA_DEVICES=${ROCE_HCAS} ${COMMON_ENV} ${ZIG_IMAGE} tensorfold-native serve ${SERVED_IN_CONTAINER} --backend cuda --host 127.0.0.1 --port ${UPSTREAM_PORT} --name DeepSeek-V4.1-Flash-1017 --context ${CONTEXT} --parallel ${PARALLEL} --max-tokens ${MAX_TOKENS} --temperature 1.0 --top-p 0.95 --top-k 20 ${THINK_FLAG} ${EFFORT_ARGS} ${BUDGET_ARGS}"
+    HEAD_CMD="docker run -d --name ${CONTAINER_NAME} ${COMMON_ARGS} -v ${HF_CACHE}:/hf:ro -v ${ROOT_DIR}:${ROOT_DIR}:ro -e TF_TP_WORLD=2 -e TF_TP_MASTER=${HEAD_IP} -e TF_TP_PORT=${MASTER_PORT} -e TF_DS_RANK_CACHE=/hf/${DATA_SUB}/rank-cache -e TF_DS_KIT=/hf/${KIT_SUB} -e TENSORFOLD_CUDA_KERNELS=/hf/${KIT_SUB}/aot -e TF_DS_ENGRAM=${ENGRAM_IN_CONTAINER} -e TF_DS_TOKEN_MAP=/hf/${DATA_SUB}/dsv41_token_map.json -e TF_DS_GRAPHS=1 -e TF_DS_HC_SIDE=1 -e TF_DS_L2_PREFETCH=1 -e TF_DS_ENGRAM_AIO=1 -e TF_RDMA_DEVICES=${ROCE_HCAS} ${COMMON_ENV} ${ZIG_IMAGE} tensorfold-native serve ${SERVED_IN_CONTAINER} --backend cuda --host 127.0.0.1 --port ${UPSTREAM_PORT} --name DeepSeek-V4.1-Flash-1017 --context ${CONTEXT} --parallel ${PARALLEL} --max-tokens ${MAX_TOKENS} --temperature 1.0 --top-p 0.95 --top-k 20 ${THINK_FLAG} ${EFFORT_ARGS} ${BUDGET_ARGS}"
 
     if [[ "$DRY_RUN" == "1" ]]; then
         echo "[dry-run:zig] WORKER ($WORKER_IP):"
@@ -199,20 +199,7 @@ else
     die "Unsupported ENGINE_BACKEND='$ENGINE_BACKEND' (must be 'zig' or 'python')"
 fi
 
-# 4. Start Spark-DSV41 CacheGuard Daemon on both Sparks (evicts Engram & Rank Cache pages every 15s)
-log "Starting spark-dsv41-cacheguard daemon on Head and Worker..."
-nohup "$ROOT_DIR/bin/spark-dsv41-cacheguard" -interval 15s > "$ROOT_DIR/logs/cacheguard_head.log" 2>&1 &
-ssh -o BatchMode=yes "$WORKER_IP" "nohup /home/massoud/spark-dsv41/bin/spark-dsv41-cacheguard -interval 15s > /tmp/spark_dsv41_cacheguard_worker.log 2>&1 &"
-
-# 5. Start Spark-DSV41 Go Control Plane on :$PORT (8888) -> 127.0.0.1:$UPSTREAM_PORT (8000)
-log "Starting Spark-DSV41 Go Control Plane on :${PORT} -> http://127.0.0.1:${UPSTREAM_PORT}..."
-nohup "$ROOT_DIR/bin/spark-dsv41-gateway" \
-    -listen ":${PORT}" \
-    -upstream "http://127.0.0.1:${UPSTREAM_PORT}" \
-    -aliases-config "$ROOT_DIR/config/model_aliases.json" \
-    > "$ROOT_DIR/logs/gateway.log" 2>&1 &
-
-# 6. Wait for Upstream Engine & Gateway Readiness
+# 4. Wait for Upstream Engine Readiness
 log "Waiting for DeepSeek-V4.1-Flash-1017 ($ENGINE_BACKEND backend) to finish loading ~98.9 GiB/rank..."
 start_ts=$SECONDS
 until curl -sf --max-time 5 "http://127.0.0.1:${UPSTREAM_PORT}/v1/models" >/dev/null 2>&1; do
@@ -221,6 +208,29 @@ until curl -sf --max-time 5 "http://127.0.0.1:${UPSTREAM_PORT}/v1/models" >/dev/
     fi
     sleep 5
 done
+
+# 5. Start Spark-DSV41 CacheGuard Daemon & Go Control Plane inside the persistent container scope
+HEAD_CNAME="dsv41-1017-exl3-tf"
+WORKER_CNAME="dsv41-1017-exl3-tf"
+if [[ "$ENGINE_BACKEND" == "python" ]]; then
+    HEAD_CNAME="tfv41-r0"
+    WORKER_CNAME="tfv41-r1"
+fi
+
+log "Starting spark-dsv41-cacheguard daemon on Head and Worker..."
+docker cp "$ROOT_DIR/bin/spark-dsv41-cacheguard" "${HEAD_CNAME}:/usr/local/bin/spark-dsv41-cacheguard"
+docker exec -d "$HEAD_CNAME" /usr/local/bin/spark-dsv41-cacheguard -interval 15s /hf/tensorfold-dsv41/45ee5d0f/rank-cache /hf/hub/models--deepseek-ai--DeepSeek-V4.1-Flash-1017/snapshots/1bae0e1088993b9b82de08f59de5be5a34e42170 /cache/tf-ds-rank /engram
+ssh -o BatchMode=yes "$WORKER_IP" "docker cp /home/massoud/spark-dsv41/bin/spark-dsv41-cacheguard ${WORKER_CNAME}:/usr/local/bin/spark-dsv41-cacheguard && docker exec -d ${WORKER_CNAME} /usr/local/bin/spark-dsv41-cacheguard -interval 15s /rank-cache /engram /cache/tf-ds-rank"
+
+log "Starting Spark-DSV41 Go Control Plane on :${PORT} -> http://127.0.0.1:${UPSTREAM_PORT}..."
+docker cp "$ROOT_DIR/bin/spark-dsv41-gateway" "${HEAD_CNAME}:/usr/local/bin/spark-dsv41-gateway"
+docker exec "$HEAD_CNAME" mkdir -p /etc/spark-dsv41
+docker cp "$ROOT_DIR/config/model_aliases.json" "${HEAD_CNAME}:/etc/spark-dsv41/model_aliases.json"
+docker exec -d "$HEAD_CNAME" /usr/local/bin/spark-dsv41-gateway \
+    -listen ":${PORT}" \
+    -upstream "http://127.0.0.1:${UPSTREAM_PORT}" \
+    -aliases-config "/etc/spark-dsv41/model_aliases.json"
+sleep 1
 
 # Run immediate cacheguard sweep right after 98.9 GiB weight load completes
 "$ROOT_DIR/bin/spark-dsv41-cacheguard" --once >/dev/null 2>&1 || true

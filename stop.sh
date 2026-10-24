@@ -14,9 +14,9 @@ log() {
 }
 
 log "Stopping Spark-DSV41 Go Gateway and CacheGuard on Head..."
-pkill -f "spark-dsv41-gateway" 2>/dev/null || true
-pkill -f "spark-dsv41-cacheguard" 2>/dev/null || true
-pkill -f "dsv41-memguard" 2>/dev/null || true
+pkill -f "[s]park-dsv41-gateway" 2>/dev/null || true
+pkill -f "[s]park-dsv41-cacheguard" 2>/dev/null || true
+pkill -f "[d]sv41-memguard" 2>/dev/null || true
 
 for cname in dsv41-1017-exl3-tf tfv41-r0 spark-dsv41-r0; do
     if docker ps -a --format '{{.Names}}' | grep -qx "$cname"; then
@@ -29,8 +29,8 @@ done
 if ssh -o BatchMode=yes -o ConnectTimeout=5 "$WORKER_HOST" true 2>/dev/null; then
     log "Stopping Spark-DSV41 CacheGuard and TensorFold containers on Worker ($WORKER_HOST)..."
     ssh -o BatchMode=yes "$WORKER_HOST" "
-        pkill -f 'spark-dsv41-cacheguard' 2>/dev/null || true
-        pkill -f 'dsv41-memguard' 2>/dev/null || true
+        pkill -f '[s]park-dsv41-cacheguard' 2>/dev/null || true
+        pkill -f '[d]sv41-memguard' 2>/dev/null || true
         for cname in dsv41-1017-exl3-tf tfv41-r1 spark-dsv41-r1; do
             if docker ps -a --format '{{.Names}}' | grep -qx \"\$cname\"; then
                 docker stop -t $STOP_TIMEOUT \"\$cname\" >/dev/null 2>&1 || true
