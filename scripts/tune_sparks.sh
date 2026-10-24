@@ -60,8 +60,8 @@ apply_node_tuning() {
     fi
 
     # 4. Evict Rank Cache & Engram safetensors from OS page cache
-    if [ -x /home/massoud/spark-dsv41/bin/spark-dsv41-cacheguard ]; then
-        /home/massoud/spark-dsv41/bin/spark-dsv41-cacheguard --once 2>/dev/null || true
+    if [ -x "$HOME/spark-dsv41/bin/spark-dsv41-cacheguard" ]; then
+        "$HOME/spark-dsv41/bin/spark-dsv41-cacheguard" --once 2>/dev/null || true
     fi
 
     local mem_avail

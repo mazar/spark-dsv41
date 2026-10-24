@@ -71,8 +71,8 @@ if [[ ! -x "$ROOT_DIR/bin/spark-dsv41-gateway" ]] || [[ ! -x "$ROOT_DIR/bin/spar
     mkdir -p "$ROOT_DIR/bin"
     (cd "$ROOT_DIR/pkg/gateway" && go build -o "$ROOT_DIR/bin/spark-dsv41-gateway" .)
     (cd "$ROOT_DIR/pkg/cacheguard" && go build -o "$ROOT_DIR/bin/spark-dsv41-cacheguard" .)
-    ssh -o BatchMode=yes "$WORKER_IP" "mkdir -p /home/massoud/spark-dsv41/bin"
-    scp -q "$ROOT_DIR/bin/spark-dsv41-cacheguard" "$WORKER_IP:/home/massoud/spark-dsv41/bin/spark-dsv41-cacheguard"
+    ssh -o BatchMode=yes "$WORKER_IP" "mkdir -p \$HOME/spark-dsv41/bin"
+    scp -q "$ROOT_DIR/bin/spark-dsv41-cacheguard" "$WORKER_IP:~/spark-dsv41/bin/spark-dsv41-cacheguard"
 fi
 
 # 2. Check for running Spark-GLM53 containers or 85 GiB CUDA IPC weight daemon
@@ -80,8 +80,8 @@ if [[ "$DRY_RUN" != "1" ]]; then
     if docker ps --format '{{.Names}}' | grep -qE '^spark-glm53' || pgrep -f "[s]park-cuda-ipc-weights|[s]park-shm-weights" >/dev/null 2>&1; then
         if [[ "$SWITCH_FROM_GLM53" == "1" ]]; then
             log "Stopping active Spark-GLM53 engine and freeing 85 GiB weight daemon (--switch-from-glm53)..."
-            if [[ -x /home/massoud/spark-glm53/stop.sh ]]; then
-                /home/massoud/spark-glm53/stop.sh --purge-shm
+            if [[ -x "$HOME/spark-glm53/stop.sh" ]]; then
+                "$HOME/spark-glm53/stop.sh" --purge-shm
             fi
         else
             die "Spark-GLM53 is currently running or holding 85 GiB in spark-cuda-ipc-weights. DeepSeek-V4.1-Flash-1017 requires ~104 GiB/node. Run with '--switch-from-glm53' to cleanly stop Spark-GLM53 first."
@@ -112,11 +112,11 @@ mkdir -p "$ROOT_DIR/logs"
 if [[ "$ENGINE_BACKEND" == "zig" ]]; then
     ZIG_IMAGE="${ZIG_IMAGE:-tensorfold-dsv41:exl3-tp2-625d420e24a4}"
     CONTAINER_NAME="dsv41-1017-exl3-tf"
-    HF_CACHE="${HF_CACHE:-/home/massoud/.cache/huggingface}"
-    MODEL_REV="45ee5d0fd106c94a3d77f721e09cbb2f50e5a16b"
-    ENGRAM_REV="1bae0e1088993b9b82de08f59de5be5a34e42170"
-    DATA_SUB="tensorfold-dsv41/45ee5d0f"
-    KIT_SUB="tensorfold-dsv41/kit-abe07c7d/kit"
+    HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
+    MODEL_REV="${MODEL_REV:-45ee5d0fd106c94a3d77f721e09cbb2f50e5a16b}"
+    ENGRAM_REV="${ENGRAM_REV:-1bae0e1088993b9b82de08f59de5be5a34e42170}"
+    DATA_SUB="tensorfold-dsv41/${MODEL_REV:0:8}"
+    KIT_SUB="${KIT_SUB:-tensorfold-dsv41/kit-abe07c7d/kit}"
     MODEL_IN_CONTAINER="/hf/hub/models--Mia-AiLab--DeepSeek-V4.1-Flash-1017-EXL3-EAQ-v1-2.9-bpw/snapshots/${MODEL_REV}"
     SERVED_IN_CONTAINER="/hf/${DATA_SUB}/model"
     ENGRAM_IN_CONTAINER="/hf/hub/models--deepseek-ai--DeepSeek-V4.1-Flash-1017/snapshots/${ENGRAM_REV}"
@@ -124,7 +124,7 @@ if [[ "$ENGINE_BACKEND" == "zig" ]]; then
     COMMON_ARGS="--label tf.recipe.ablit=0 --gpus all --ipc=host --network host --ulimit memlock=-1 --ulimit stack=67108864 --cap-add IPC_LOCK --device /dev/infiniband"
     COMMON_ENV="-e TF_DS_REPLAY_FLOOR=1 -e TF_DS_STREAMS=${PARALLEL} -e TF_RDMA_IDLE_S=${RDMA_IDLE_S} -e TF_RDMA_NAP_US=${RDMA_NAP_US} -e HF_HUB_OFFLINE=1 -e TF_DS_PREFILL_INTERLEAVE_MS=${PREFILL_INTERLEAVE_MS} -e TF_DS_IDX_SPLIT=${TF_DS_IDX_SPLIT} -e TF_DS_IMAGE_CACHE=${TF_DS_IMAGE_CACHE} -e TF_RDMA_GID_INDEX=${GID_INDEX} -e NCCL_SOCKET_IFNAME=${SOCKET_IFNAME} -e NCCL_IB_HCA=${ROCE_HCAS} -e NCCL_IB_GID_INDEX=${GID_INDEX}"
 
-    WORKER_CMD="docker run -d --name ${CONTAINER_NAME} ${COMMON_ARGS} -v dsv41-1017-exl3-hf:/hf:ro -v \$HOME/.cache/dsv41-tensorfold/engram-1bae0e10:/engram:ro -v \$HOME/.cache/dsv41-tensorfold/rank-cache-45ee5d0f:/rank-cache:ro ${COMMON_ENV} ${ZIG_IMAGE} tf-dsv41-lanes ${MODEL_IN_CONTAINER} /rank-cache 1 2 ${HEAD_IP} ${MASTER_PORT} /hf/${KIT_SUB} --engram /engram --token-map /hf/${DATA_SUB}/dsv41_token_map.json --pool ${CONTEXT} --streams ${PARALLEL} --drafts ${DRAFTS} --graphs 1 --side 1 --prefetch 1 --aio 1 --rdma ${ROCE_HCAS}"
+    WORKER_CMD="docker run -d --name ${CONTAINER_NAME} ${COMMON_ARGS} -v dsv41-1017-exl3-hf:/hf:ro -v \$HOME/.cache/dsv41-tensorfold/engram-${ENGRAM_REV:0:8}:/engram:ro -v \$HOME/.cache/dsv41-tensorfold/rank-cache-${MODEL_REV:0:8}:/rank-cache:ro ${COMMON_ENV} ${ZIG_IMAGE} tf-dsv41-lanes ${MODEL_IN_CONTAINER} /rank-cache 1 2 ${HEAD_IP} ${MASTER_PORT} /hf/${KIT_SUB} --engram /engram --token-map /hf/${DATA_SUB}/dsv41_token_map.json --pool ${CONTEXT} --streams ${PARALLEL} --drafts ${DRAFTS} --graphs 1 --side 1 --prefetch 1 --aio 1 --rdma ${ROCE_HCAS}"
 
     THINK_FLAG="--thinking"
     [[ "$THINKING" == "0" ]] && THINK_FLAG="--no-thinking"
@@ -151,8 +151,8 @@ if [[ "$ENGINE_BACKEND" == "zig" ]]; then
 
 elif [[ "$ENGINE_BACKEND" == "python" ]]; then
     PY_IMAGE="${PY_IMAGE:-tensorfold-dsv41:730d41abd8f4}"
-    MODEL_VIEW="${MODEL_VIEW:-/home/massoud/models/deepseek-v41-1017-exl3-2.9bpw}"
-    CACHE_DIR="${CACHE_DIR:-/home/massoud/tfv41-cache}"
+    MODEL_VIEW="${MODEL_VIEW:-$HOME/models/deepseek-v41-1017-exl3-2.9bpw}"
+    CACHE_DIR="${CACHE_DIR:-$HOME/tfv41-cache}"
     # CRITICAL FIX: MEM_FLOOR_GIB=0 disables the buggy static set_per_process_memory_fraction()
     # ceiling lock in _memory_ceiling() that caused OutOfMemoryError on 12 MiB allocations after warm().
     MEM_FLOOR_GIB="${MEM_FLOOR_GIB:-0}"
@@ -220,7 +220,7 @@ fi
 log "Starting spark-dsv41-cacheguard daemon on Head and Worker..."
 docker cp "$ROOT_DIR/bin/spark-dsv41-cacheguard" "${HEAD_CNAME}:/usr/local/bin/spark-dsv41-cacheguard"
 docker exec -d "$HEAD_CNAME" /usr/local/bin/spark-dsv41-cacheguard -interval 15s /hf/tensorfold-dsv41/45ee5d0f/rank-cache /hf/hub/models--deepseek-ai--DeepSeek-V4.1-Flash-1017/snapshots/1bae0e1088993b9b82de08f59de5be5a34e42170 /cache/tf-ds-rank /engram
-ssh -o BatchMode=yes "$WORKER_IP" "docker cp /home/massoud/spark-dsv41/bin/spark-dsv41-cacheguard ${WORKER_CNAME}:/usr/local/bin/spark-dsv41-cacheguard && docker exec -d ${WORKER_CNAME} /usr/local/bin/spark-dsv41-cacheguard -interval 15s /rank-cache /engram /cache/tf-ds-rank"
+ssh -o BatchMode=yes "$WORKER_IP" "docker cp \$HOME/spark-dsv41/bin/spark-dsv41-cacheguard ${WORKER_CNAME}:/usr/local/bin/spark-dsv41-cacheguard && docker exec -d ${WORKER_CNAME} /usr/local/bin/spark-dsv41-cacheguard -interval 15s /rank-cache /engram /cache/tf-ds-rank"
 
 log "Starting Spark-DSV41 Go Control Plane on :${PORT} -> http://127.0.0.1:${UPSTREAM_PORT}..."
 docker cp "$ROOT_DIR/bin/spark-dsv41-gateway" "${HEAD_CNAME}:/usr/local/bin/spark-dsv41-gateway"
@@ -234,7 +234,7 @@ sleep 1
 
 # Run immediate cacheguard sweep right after 98.9 GiB weight load completes
 "$ROOT_DIR/bin/spark-dsv41-cacheguard" --once >/dev/null 2>&1 || true
-ssh -o BatchMode=yes "$WORKER_IP" "/home/massoud/spark-dsv41/bin/spark-dsv41-cacheguard --once >/dev/null 2>&1 || true"
+ssh -o BatchMode=yes "$WORKER_IP" "\$HOME/spark-dsv41/bin/spark-dsv41-cacheguard --once >/dev/null 2>&1 || true"
 
 head_after=$(awk '/^MemAvailable:/ {printf "%.2f", $2/1048576}' /proc/meminfo)
 worker_after=$(ssh -o BatchMode=yes "$WORKER_IP" "awk '/^MemAvailable:/ {printf \"%.2f\", \$2/1048576}' /proc/meminfo")

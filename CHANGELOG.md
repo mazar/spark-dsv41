@@ -3,7 +3,7 @@
 ## [1.0.0] — 2026-10-24
 
 ### Added
-- **Dedicated `/home/massoud/spark-dsv41` Repository:**
+- **Dedicated `spark-dsv41` Repository:**
   - Dual-backend launcher (`scripts/start_engine.sh`) supporting both `ENGINE_BACKEND=zig` (`tensorfold-dsv41:exl3-tp2-625d420e24a4`, default for maximum throughput) and `ENGINE_BACKEND=python` (`tensorfold-dsv41:730d41abd8f4`, for `xgrammar` `json_schema` guided decoding) behind the compiled Go Control Plane on port `8888`.
   - Safe `--switch-from-glm53` flag to cleanly stop `Spark-GLM53` and release its `85.28 GiB` CUDA IPC weight daemon before loading `DeepSeek-V4.1-Flash-1017` (`98.9 GiB/rank`).
 - **Compiled Go/C Page-Cache Guard (`pkg/cacheguard` -> `bin/spark-dsv41-cacheguard`):**

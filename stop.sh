@@ -6,6 +6,7 @@
 # ==============================================================================
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKER_HOST="${WORKER_HOST:-10.100.240.2}"
 STOP_TIMEOUT="${STOP_TIMEOUT:-20}"
 
@@ -41,10 +42,10 @@ if ssh -o BatchMode=yes -o ConnectTimeout=5 "$WORKER_HOST" true 2>/dev/null; the
 fi
 
 # Flush any lingering Engram/Rank Cache pages from Linux page cache
-if [ -x /home/massoud/spark-dsv41/bin/spark-dsv41-cacheguard ]; then
-    /home/massoud/spark-dsv41/bin/spark-dsv41-cacheguard --once >/dev/null 2>&1 || true
+if [ -x "$ROOT_DIR/bin/spark-dsv41-cacheguard" ]; then
+    "$ROOT_DIR/bin/spark-dsv41-cacheguard" --once >/dev/null 2>&1 || true
 fi
-ssh -o BatchMode=yes -o ConnectTimeout=5 "$WORKER_HOST" "/home/massoud/spark-dsv41/bin/spark-dsv41-cacheguard --once >/dev/null 2>&1 || true" 2>/dev/null || true
+ssh -o BatchMode=yes -o ConnectTimeout=5 "$WORKER_HOST" "\$HOME/spark-dsv41/bin/spark-dsv41-cacheguard --once >/dev/null 2>&1 || true" 2>/dev/null || true
 
 head_avail=$(awk '/^MemAvailable:/ {printf "%.2f", $2/1048576}' /proc/meminfo)
 worker_avail=$(ssh -o BatchMode=yes -o ConnectTimeout=5 "$WORKER_HOST" "awk '/^MemAvailable:/ {printf \"%.2f\", \$2/1048576}' /proc/meminfo" 2>/dev/null || echo "?")
