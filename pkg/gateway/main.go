@@ -444,14 +444,15 @@ func (r *RadixPrefixRouter) evictLRULocked(samplePayload string) {
 // ============================================================================
 
 type ReasoningConfig struct {
-	Effort         string // Canonical gateway effort ("low", "medium", "high", "max")
-	UpstreamEffort string // TensorFold V4.1 effort ("low", "medium", "high", "xhigh")
-	EnableThinking bool
-	ClearThinking  bool
-	HardTokenCap   int
-	ToolChoice     string
-	Tools          []any
-	ToolArgTypes   map[string]map[string]string
+	Effort               string // Canonical gateway effort ("low", "medium", "high", "max")
+	UpstreamEffort       string // TensorFold V4.1 effort ("low", "medium", "high", "xhigh")
+	EnableThinking       bool
+	ClearThinking        bool
+	HardTokenCap         int
+	ResponseFormatActive bool
+	ToolChoice           string
+	Tools                []any
+	ToolArgTypes         map[string]map[string]string
 }
 
 var thinkTagRegex = regexp.MustCompile(`(?s)<think>.*?</think>\s*`)
@@ -555,6 +556,34 @@ func NormalizeReasoningAndMessages(reqMap map[string]any) (ReasoningConfig, erro
 	ctk["clear_thinking"] = cfg.ClearThinking
 	reqMap["chat_template_kwargs"] = ctk
 
+	// Translate OpenAI response_format (json_schema / json_object) and guided_* fields
+	// into an explicit schema directive so TensorFold's Zig engine (which does not natively
+	// accept response_format) never returns HTTP 400 and produces exact schema-compliant JSON.
+	var schemaDirective string
+	if rfRaw, ok := reqMap["response_format"]; ok && rfRaw != nil {
+		cfg.ResponseFormatActive = true
+		if rfMap, ok := rfRaw.(map[string]any); ok {
+			rfType, _ := rfMap["type"].(string)
+			if rfType == "json_schema" {
+				if jsObj, ok := rfMap["json_schema"].(map[string]any); ok {
+					if schemaObj := jsObj["schema"]; schemaObj != nil {
+						sb, _ := json.MarshalIndent(schemaObj, "", "  ")
+						schemaDirective = fmt.Sprintf("\n\nCRITICAL OUTPUT FORMAT REQUIREMENT: Your final response MUST be ONLY a valid raw JSON object that strictly conforms to this JSON Schema:\n```json\n%s\n```\nDo NOT wrap the JSON in markdown code fences (no ```json), and do NOT include any explanatory text before or after the JSON object.", string(sb))
+					}
+				}
+			} else if rfType == "json_object" {
+				schemaDirective = "\n\nCRITICAL OUTPUT FORMAT REQUIREMENT: Your final response MUST be ONLY a valid raw JSON object starting with '{' and ending with '}'. Do NOT wrap the JSON in markdown code fences."
+			}
+		}
+		delete(reqMap, "response_format")
+	}
+	for k := range reqMap {
+		if strings.HasPrefix(k, "guided_") {
+			cfg.ResponseFormatActive = true
+			delete(reqMap, k)
+		}
+	}
+
 	rawMsgs, ok := reqMap["messages"].([]any)
 	if !ok || len(rawMsgs) == 0 {
 		return cfg, nil
@@ -565,6 +594,22 @@ func NormalizeReasoningAndMessages(reqMap map[string]any) (ReasoningConfig, erro
 		if m, ok := rm.(map[string]any); ok {
 			if role, _ := m["role"].(string); role == "user" {
 				lastUserIdx = i
+			}
+		}
+	}
+
+	if lastUserIdx >= 0 {
+		if m, ok := rawMsgs[lastUserIdx].(map[string]any); ok {
+			if cStr, ok := m["content"].(string); ok {
+				if strings.Contains(cStr, "Schema:\n```json") || strings.Contains(cStr, "Output as JSON matching this schema") {
+					cfg.ResponseFormatActive = true
+					if schemaDirective == "" {
+						m["content"] = cStr + "\n\nIMPORTANT: Output ONLY the raw JSON object starting with '{' and ending with '}' — do NOT wrap in markdown code fences and do NOT include any explanatory text before or after the JSON."
+					}
+				}
+				if schemaDirective != "" {
+					m["content"] = cStr + schemaDirective
+				}
 			}
 		}
 	}
@@ -1537,6 +1582,9 @@ func (gs *GatewayServer) handleNonStreamingChatResponse(w http.ResponseWriter, b
 			msg["content"] = content
 			ch["finish_reason"] = "tool_calls"
 		} else {
+			if reasoningCfg.ResponseFormatActive && len(existingTCs) == 0 && strings.TrimSpace(content) != "" {
+				content = extractCleanJSONObject(content)
+			}
 			msg["content"] = content
 		}
 
@@ -1567,6 +1615,34 @@ func (gs *GatewayServer) handleNonStreamingChatResponse(w http.ResponseWriter, b
 	_, _ = w.Write(outBytes)
 }
 
+func extractCleanJSONObject(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return s
+	}
+	// Strip markdown fences if present
+	if idx := strings.Index(s, "```"); idx >= 0 {
+		rest := s[idx+3:]
+		if nl := strings.IndexByte(rest, '\n'); nl >= 0 {
+			rest = rest[nl+1:]
+		}
+		if endFence := strings.LastIndex(rest, "```"); endFence >= 0 {
+			s = strings.TrimSpace(rest[:endFence])
+		}
+	}
+	firstBrace := strings.IndexByte(s, '{')
+	lastBrace := strings.LastIndexByte(s, '}')
+	if firstBrace >= 0 && lastBrace > firstBrace {
+		candidate := s[firstBrace : lastBrace+1]
+		repaired := RepairMalformedJSON(candidate)
+		var check map[string]any
+		if json.Unmarshal([]byte(repaired), &check) == nil {
+			return repaired
+		}
+	}
+	return RepairMalformedJSON(s)
+}
+
 func (gs *GatewayServer) handleStreamingChatResponse(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -1584,6 +1660,9 @@ func (gs *GatewayServer) handleStreamingChatResponse(
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 
 	loopGuard := &LoopGuard{}
+	var jsonRespBuf strings.Builder
+	var lastEvt map[string]any
+	sawToolCalls := false
 
 	writeSSE := func(obj map[string]any) {
 		b, err := json.Marshal(obj)
@@ -1594,6 +1673,35 @@ func (gs *GatewayServer) handleStreamingChatResponse(
 		if flusher != nil {
 			flusher.Flush()
 		}
+	}
+
+	flushBufferedJSON := func() {
+		if !reasoningCfg.ResponseFormatActive || sawToolCalls || jsonRespBuf.Len() == 0 {
+			return
+		}
+		cleanedJSON := extractCleanJSONObject(jsonRespBuf.String())
+		jsonRespBuf.Reset()
+		tmpl := lastEvt
+		if tmpl == nil {
+			tmpl = map[string]any{
+				"id":      "chatcmpl-spark-dsv41",
+				"object":  "chat.completion.chunk",
+				"created": time.Now().Unix(),
+				"model":   CanonicalUpstreamModel,
+			}
+		}
+		out := make(map[string]any, len(tmpl))
+		for k, v := range tmpl {
+			out[k] = v
+		}
+		out["choices"] = []any{
+			map[string]any{
+				"index":         0,
+				"delta":         map[string]any{"content": cleanedJSON},
+				"finish_reason": nil,
+			},
+		}
+		writeSSE(out)
 	}
 
 	for scanner.Scan() {
@@ -1608,6 +1716,7 @@ func (gs *GatewayServer) handleStreamingChatResponse(
 		}
 		dataStr := strings.TrimSpace(line[6:])
 		if dataStr == "[DONE]" {
+			flushBufferedJSON()
 			_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
 			if flusher != nil {
 				flusher.Flush()
@@ -1623,6 +1732,7 @@ func (gs *GatewayServer) handleStreamingChatResponse(
 			}
 			continue
 		}
+		lastEvt = evt
 
 		choices, _ := evt["choices"].([]any)
 		if len(choices) == 0 {
@@ -1636,12 +1746,16 @@ func (gs *GatewayServer) handleStreamingChatResponse(
 		}
 		delta, _ := ch["delta"].(map[string]any)
 		if delta == nil {
+			if ch["finish_reason"] != nil {
+				flushBufferedJSON()
+			}
 			writeSSE(evt)
 			continue
 		}
 
 		// Repair & coerce complete JSON tool_calls in delta if present
 		if tcs, ok := delta["tool_calls"].([]any); ok && len(tcs) > 0 {
+			sawToolCalls = true
 			for _, tcRaw := range tcs {
 				if tc, ok := tcRaw.(map[string]any); ok {
 					if fn, ok := tc["function"].(map[string]any); ok {
@@ -1660,6 +1774,7 @@ func (gs *GatewayServer) handleStreamingChatResponse(
 		if loopGuard.FeedAndCheck(content + reasoningDelta) {
 			gs.loopGuardAborts.Add(1)
 			cancelUpstream()
+			flushBufferedJSON()
 			ch["finish_reason"] = "stop"
 			delta["content"] = ""
 			writeSSE(evt)
@@ -1668,6 +1783,22 @@ func (gs *GatewayServer) handleStreamingChatResponse(
 				flusher.Flush()
 			}
 			return
+		}
+
+		if reasoningCfg.ResponseFormatActive && !sawToolCalls && content != "" {
+			jsonRespBuf.WriteString(content)
+			delete(delta, "content")
+			if ch["finish_reason"] != nil {
+				flushBufferedJSON()
+				writeSSE(evt)
+			} else if len(delta) > 0 {
+				writeSSE(evt)
+			}
+			continue
+		}
+
+		if ch["finish_reason"] != nil {
+			flushBufferedJSON()
 		}
 
 		writeSSE(evt)

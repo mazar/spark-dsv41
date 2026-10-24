@@ -1,4 +1,6 @@
 bin/
+data/
+runs/
 logs/
 *.log
 *.spill
