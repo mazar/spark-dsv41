@@ -1,0 +1,27 @@
+{
+  "models": [
+    "DeepSeek-V4.1-Flash-1017",
+    "deepseek-v4.1-flash-1017",
+    "deepseek-v4.1-flash"
+  ],
+  "aliases": {
+    "dsv41-none": "none",
+    "dsv41-low": "low",
+    "dsv41-medium": "medium",
+    "dsv41-high": "high",
+    "dsv41-max": "max",
+    "dsv41-xhigh": "xhigh",
+    "claude-opus-4-6": {
+      "effort": "max",
+      "description": "Anthropic Claude CLI alias mapped to DeepSeek-V4.1-Flash-1017 with xhigh reasoning effort"
+    },
+    "claude-sonnet-4-6": {
+      "effort": "high",
+      "description": "Anthropic Claude CLI alias mapped to DeepSeek-V4.1-Flash-1017 with high reasoning effort"
+    },
+    "claude-haiku-4-5-20251001": {
+      "effort": "low",
+      "description": "Anthropic Claude CLI fast subagent alias mapped to DeepSeek-V4.1-Flash-1017 with low reasoning effort"
+    }
+  }
+}
