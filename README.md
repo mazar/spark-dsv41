@@ -24,18 +24,19 @@ It pairs the fastest community TensorFold engines ([`MiaAI-Lab/DeepSeek-v4.1-Fla
 
 ## 2. Verified Benchmarks (2x NVIDIA DGX Spark, Dual-Rail ConnectX-7 RoCE v2)
 
-### A. [`SeraphimSerapis/tool-eval-bench`](https://github.com/SeraphimSerapis/tool-eval-bench) (88 Scenarios, Hardmode, Seed 42)
+### A. [`SeraphimSerapis/tool-eval-bench`](https://github.com/SeraphimSerapis/tool-eval-bench) (Hardmode, Seed 42)
 
-| Metric (88 Scenarios, Hardmode, Seed 42) | `MiaAI-Lab` `GLM-5.3-Flash-EXL3` | [`Spark-GLM53`](https://github.com/mazar/spark-glm53) (`NVFP4` + `B12X`) | **`Spark-DSV41` (`DeepSeek-V4.1-Flash-1017`)** | `Spark-DSV41` Highlights |
-| :--- | :---: | :---: | :---: | :--- |
-| **Final Score** | `94 / 100` (`165 / 176`) | **`95 / 100` (`168 / 176`)** | **`93 / 100` (`164 / 176`)** | **★★★★★ Excellent** |
-| **Deployability Score ($\alpha=0.7$)** | `76 / 100` | `77 / 100` | **`82 / 100`** | **+5 pts higher deployability** |
-| **Responsiveness Score** | `34 / 100` | `35 / 100` | **`55 / 100`** | **+20 pts higher responsiveness** |
-| **Median Turn Latency** | `4,811 ms` (`4.81 s`) | `4,343 ms` (`4.34 s`) | **`2,600 ms` (`2.60 s`)** | **-40.1% faster per turn** |
-| **Total Wall-Clock Time (All 88 Scenarios)** | `1,942.0 s` (`32.4 min`) | `1,754.5 s` (`29.2 min`) | **`940.0 s` (`15.67 min`)** | **1.87x faster than `Spark-GLM53` (-13.6 min)** |
-| **Categories at 100%** | `11 / 16` | `14 / 16` | **`11 / 16`** | Tool Selection, Param Precision, Multi-Step, Restraint, Recovery, Localization, Reasoning, Instruction, Code, Planning, Creative all **100%** |
-| **Structured Output (Category O)** | `83%` (`10 / 12`) | `100%` (`12 / 12`) | **`83%` (`10 / 12`)** | Up from `33%` (`4 / 12` HTTP 400) via `spark-dsv41-gateway` `response_format` translation |
-| **Post-Suite Free UMA (`MemAvailable`)** | — | `4.19 GiB` / `6.47 GiB` | **`3.83 GiB` (Head) / `6.57 GiB` (Worker)** | Zero OOMs across all 88 multi-turn scenarios (`spark-dsv41-cacheguard` active) |
+| Metric (Hardmode, Seed 42) | `MiaAI-Lab` `GLM-5.3-Flash-EXL3` | [`Spark-GLM53`](https://github.com/mazar/spark-glm53) (`NVFP4` + `B12X`) | `Spark-DSV41` (Stock `2.9 bpw` `45ee5d0f`) | **`Spark-DSV41` (`custom-hq` Hybrid EXL3)** | `custom-hq` Highlights |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **88-Scenario Score (`TC-01..TC-88`)** | `94 / 100` (`165 / 176`) | **`95 / 100` (`168 / 176`)** | `93 / 100` (`164 / 176`) | **`95 / 100` (`168 / 176`)** | **Matches `Spark-GLM53` accuracy at ~1.85x speed** |
+| **97-Scenario Score (`v2.8.1`, `TC-01..TC-97`)** | — | — | — | **`93 / 100` (`180 / 194`)** | **★★★★★ Excellent** on expanded 97-scenario suite |
+| **Categories at 100%** | `11 / 16` | `14 / 16` | `11 / 16` | **`13 / 16`** | **`Context & State` (`20/20`)** & **`Toolset Scale` (`8/8`)** raised to **100%** |
+| **Deployability Score ($\alpha=0.7$)** | `76 / 100` | `77 / 100` | **`82 / 100`** | **`81 / 100`** | **+4–5 pts higher deployability than GLM-5.3** |
+| **Responsiveness Score** | `34 / 100` | `35 / 100` | **`55 / 100`** | **`53 / 100`** | **+18–20 pts higher responsiveness** |
+| **Median Turn Latency** | `4,811 ms` (`4.81 s`) | `4,343 ms` (`4.34 s`) | **`2,600 ms` (`2.60 s`)** | **`2,800 ms` (`2.80 s`)** | **-35.5% to -40.1% faster per turn** |
+| **8K Prompt Prefill (`10,012` tokens)** | ~1,950 tok/s | 3,600+ tok/s | ~2,100 tok/s | **`2,416.1 tok/s`** (`4.14 s`) | `4.0 bpw` `shared_experts` unlocks `grouped_mma3_kernel` on all 40 layers |
+| **Structured Output (Category O)** | `83%` (`10 / 12`) | `100%` (`12 / 12`) | **`83%` (`10 / 12`)** | **`83%` (`10 / 12`)** | Up from `33%` (`4 / 12` HTTP 400) via `spark-dsv41-gateway` `response_format` translation |
+| **Post-Suite Free UMA (`MemAvailable`)** | — | `4.19 GiB` / `6.47 GiB` | `3.83 GiB` / `6.57 GiB` | **`2.0 GiB` (Head) / `4.8 GiB` (Worker)** | Zero OOMs (`3.6 GiB` / `3.2 GiB` `buff/cache` via `spark-dsv41-cacheguard`) |
 
 ### B. [`eugr/llama-benchy`](https://github.com/eugr/llama-benchy) Multi-Stream Concurrency (`c=1..8`, `PARALLEL=4`)
 
@@ -52,6 +53,21 @@ It pairs the fastest community TensorFold engines ([`MiaAI-Lab/DeepSeek-v4.1-Fla
 | **`pp2048 (c1)`** | *(1,910.0 tok/s e2e)* | — | — | — | `1072.25 ± 0.00` |
 | **`tg256 (c1)`** | **`56.95 ± 0.00`** | **`56.95 ± 0.00`** | **`57.00 ± 0.00`** | **`57.00 ± 0.00`** | — |
 
+### C. Industry-Standard Coding Intelligence (`EvalPlus HumanEval+` & `LiveCodeBench v6`)
+
+Evaluated across `194` coding problems per model (`164` `EvalPlus HumanEval+` tasks with `80x` stricter edge-case unit tests + `30` stratified `LiveCodeBench v6` competitive programming tasks across Easy, Medium, and Hard):
+
+| Coding Benchmark (`temperature=0.0`, `c=4`) | [`Spark-GLM53`](https://github.com/mazar/spark-glm53) (`NVFP4` + `B12X`) | `Spark-DSV41` (Stock `2.9 bpw` `45ee5d0f`) | **`Spark-DSV41` (`custom-hq` Hybrid EXL3)** | Key Finding |
+| :--- | :---: | :---: | :---: | :--- |
+| **`EvalPlus HumanEval` (Base, 164 tasks)** | **`96.34%` (`158 / 164`)** | **`96.34%` (`158 / 164`)** | **`96.34%` (`158 / 164`)** | All three models tie on base `HumanEval` (`158 / 164`) |
+| **`EvalPlus HumanEval+` (`80x` Extra Tests, 164 tasks)** | **`92.68%` (`152 / 164`)** | `91.46%` (`150 / 164`) | `90.85%` (`149 / 164`) | All three within `149–152 / 164` (`90.9%–92.7%`) |
+| **`HumanEval+` Wall-Clock Time (164 tasks, `c=4`)** | `654.2 s` (`51,720` toks) | **`243.5 s` (`31,125` toks)** | **`264.0 s` (`31,179` toks)** | **`Spark-DSV41` is 2.48x–2.69x faster than `Spark-GLM53`** |
+| **`LiveCodeBench v6` Overall (30 tasks)** | `76.67%` (`23 / 30`) | `90.00%` (`27 / 30`) | **`93.33%` (`28 / 30`)** | **`custom-hq` leads by `+16.7%` vs `GLM-5.3` and `+3.3%` vs stock `2.9 bpw`** |
+| **`LiveCodeBench v6` — Easy (10 tasks)** | **`100.0%` (`10 / 10`)** | **`100.0%` (`10 / 10`)** | **`100.0%` (`10 / 10`)** | 3-way tie at `100%` |
+| **`LiveCodeBench v6` — Medium (10 tasks)** | `80.0%` (`8 / 10`) | `90.0%` (`9 / 10`) | **`100.0%` (`10 / 10`)** | **`custom-hq` achieves a perfect `10/10`** (stock `2.9 bpw` spiraled & timed out on `3720`) |
+| **`LiveCodeBench v6` — Hard (10 tasks)** | `50.0%` (`5 / 10`) | **`80.0%` (`8 / 10`)** | **`80.0%` (`8 / 10`)** | **`+30.0%` over `GLM-5.3` (`8/10` vs `5/10`)**; stock `2.9 bpw` spiraled & timed out on `3674` & `3692` |
+| **`<think>` Reasoning Stability on Hard/Medium** | `2` circular timeouts (`3674`, `3701`) | `3` circular timeouts (`3720`, `3674`, `3692`) | **`0` timeouts (`40%–51%` fewer `<think>` tokens)** | Upgrading Attention to `8.0 bpw` + Layer 18–22 experts to `3.0 bpw` eliminates circular `<think>` self-doubt loops |
+
 ---
 
 ## 3. Repository Layout
@@ -67,8 +83,11 @@ spark-dsv41/
 │   └── cacheguard/               # Go/C POSIX_FADV_DONTNEED page-cache eviction daemon
 ├── scripts/
 │   ├── tune_sparks.sh            # Dual-rail RoCE v2 (MTU 4200), 3003 MHz GPU clock lock, UMA hygiene
+│   ├── build_custom_hq.sh        # One-command parallel GPU RankCache upgrader (45ee5d0f -> custom-hq)
+│   ├── quantize_rank_cache.py    # Streams 1bae0e10 source slices via HTTP Range & encodes EXL3 on GPU
 │   ├── start_engine.sh           # Launches Zig (default) or Python backend + CacheGuard + Go Gateway
-│   └── benchmark_suite.py        # End-to-end speed, effort, DSML tool call, and Anthropic API verifier
+│   ├── benchmark_suite.py        # End-to-end speed, effort, DSML tool call, and Anthropic API verifier
+│   └── run_coding_benchmarks.py  # EvalPlus HumanEval+ (164) & LiveCodeBench v6 (30) evaluation harness
 └── stop.sh                       # Cleanly stops containers, CacheGuard, and Gateway on both Sparks
 ```
 
@@ -79,7 +98,15 @@ spark-dsv41/
 ### Prerequisites
 Prepare the `tensorfold-dsv41` image, 98.9 GiB Rank Cache, and 203 GB Engram shards once using either [`MiaAI-Lab/DeepSeek-v4.1-Flash-1017-2x-DGX-Sparks`](https://github.com/MiaAI-Lab/DeepSeek-v4.1-Flash-1017-2x-DGX-Sparks) (`ENGINE_BACKEND=zig`, default) or [`Elevatormusic/DeepSeek-V4.1-Flash-1017-EXL3-TensorFold-2x-DGX-Spark`](https://github.com/Elevatormusic/DeepSeek-V4.1-Flash-1017-EXL3-TensorFold-2x-DGX-Spark) (`ENGINE_BACKEND=python`).
 
+### (Optional, Recommended) Upgrade RankCache to `custom-hq` (`8b` Attention + `4b` Shared Experts + `3b` L18–22 Experts)
+No 690 GB source checkpoint download is required — `build_custom_hq.sh` streams only the exact ~12 GiB of unquantized `deepseek-ai/DeepSeek-V4.1-Flash-1017` (`1bae0e10`) slices over HTTP Range requests and encodes them in parallel on both Sparks' GPUs in ~31 minutes:
+```bash
+cd ~/spark-dsv41
+./scripts/build_custom_hq.sh
+```
+
 ### Start `Spark-DSV41` (Default Fast Zig Backend)
+`start_engine.sh` automatically selects `RANK_CACHE_TAG=custom-hq` when present (or falls back to `RANK_CACHE_TAG=45ee5d0f`):
 ```bash
 cd ~/spark-dsv41
 ./scripts/start_engine.sh

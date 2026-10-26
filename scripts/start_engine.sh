@@ -109,6 +109,16 @@ fi
 mkdir -p "$ROOT_DIR/logs"
 
 # 3. Launch Backend Engine on internal port $UPSTREAM_PORT (8000)
+RANK_CACHE_TAG="${RANK_CACHE_TAG:-}"
+if [[ -z "$RANK_CACHE_TAG" ]]; then
+    if compgen -G "$HOME/.cache/huggingface/tensorfold-dsv41/custom-hq/rank-cache/rank0of2-*.bin" >/dev/null 2>&1; then
+        RANK_CACHE_TAG="custom-hq"
+    else
+        RANK_CACHE_TAG="45ee5d0f"
+    fi
+fi
+log "Using RankCache profile: RANK_CACHE_TAG=${RANK_CACHE_TAG}"
+
 if [[ "$ENGINE_BACKEND" == "zig" ]]; then
     ZIG_IMAGE="${ZIG_IMAGE:-tensorfold-dsv41:exl3-tp2-625d420e24a4}"
     CONTAINER_NAME="dsv41-1017-exl3-tf"
@@ -116,6 +126,7 @@ if [[ "$ENGINE_BACKEND" == "zig" ]]; then
     MODEL_REV="${MODEL_REV:-45ee5d0fd106c94a3d77f721e09cbb2f50e5a16b}"
     ENGRAM_REV="${ENGRAM_REV:-1bae0e1088993b9b82de08f59de5be5a34e42170}"
     DATA_SUB="tensorfold-dsv41/${MODEL_REV:0:8}"
+    RANK_CACHE_SUB="tensorfold-dsv41/${RANK_CACHE_TAG}/rank-cache"
     KIT_SUB="${KIT_SUB:-tensorfold-dsv41/kit-abe07c7d/kit}"
     MODEL_IN_CONTAINER="/hf/hub/models--Mia-AiLab--DeepSeek-V4.1-Flash-1017-EXL3-EAQ-v1-2.9-bpw/snapshots/${MODEL_REV}"
     SERVED_IN_CONTAINER="/hf/${DATA_SUB}/model"
@@ -124,7 +135,7 @@ if [[ "$ENGINE_BACKEND" == "zig" ]]; then
     COMMON_ARGS="--label tf.recipe.ablit=0 --gpus all --ipc=host --network host --ulimit memlock=-1 --ulimit stack=67108864 --cap-add IPC_LOCK --device /dev/infiniband"
     COMMON_ENV="-e TF_DS_REPLAY_FLOOR=1 -e TF_DS_STREAMS=${PARALLEL} -e TF_RDMA_IDLE_S=${RDMA_IDLE_S} -e TF_RDMA_NAP_US=${RDMA_NAP_US} -e HF_HUB_OFFLINE=1 -e TF_DS_PREFILL_INTERLEAVE_MS=${PREFILL_INTERLEAVE_MS} -e TF_DS_IDX_SPLIT=${TF_DS_IDX_SPLIT} -e TF_DS_IMAGE_CACHE=${TF_DS_IMAGE_CACHE} -e TF_RDMA_GID_INDEX=${GID_INDEX} -e NCCL_SOCKET_IFNAME=${SOCKET_IFNAME} -e NCCL_IB_HCA=${ROCE_HCAS} -e NCCL_IB_GID_INDEX=${GID_INDEX}"
 
-    WORKER_CMD="docker run -d --name ${CONTAINER_NAME} ${COMMON_ARGS} -v dsv41-1017-exl3-hf:/hf:ro -v \$HOME/.cache/dsv41-tensorfold/engram-${ENGRAM_REV:0:8}:/engram:ro -v \$HOME/.cache/dsv41-tensorfold/rank-cache-${MODEL_REV:0:8}:/rank-cache:ro ${COMMON_ENV} ${ZIG_IMAGE} tf-dsv41-lanes ${MODEL_IN_CONTAINER} /rank-cache 1 2 ${HEAD_IP} ${MASTER_PORT} /hf/${KIT_SUB} --engram /engram --token-map /hf/${DATA_SUB}/dsv41_token_map.json --pool ${CONTEXT} --streams ${PARALLEL} --drafts ${DRAFTS} --graphs 1 --side 1 --prefetch 1 --aio 1 --rdma ${ROCE_HCAS}"
+    WORKER_CMD="docker run -d --name ${CONTAINER_NAME} ${COMMON_ARGS} -v dsv41-1017-exl3-hf:/hf:ro -v \$HOME/.cache/dsv41-tensorfold/engram-${ENGRAM_REV:0:8}:/engram:ro -v \$HOME/.cache/dsv41-tensorfold/rank-cache-${RANK_CACHE_TAG}:/rank-cache:ro ${COMMON_ENV} ${ZIG_IMAGE} tf-dsv41-lanes ${MODEL_IN_CONTAINER} /rank-cache 1 2 ${HEAD_IP} ${MASTER_PORT} /hf/${KIT_SUB} --engram /engram --token-map /hf/${DATA_SUB}/dsv41_token_map.json --pool ${CONTEXT} --streams ${PARALLEL} --drafts ${DRAFTS} --graphs 1 --side 1 --prefetch 1 --aio 1 --rdma ${ROCE_HCAS}"
 
     THINK_FLAG="--thinking"
     [[ "$THINKING" == "0" ]] && THINK_FLAG="--no-thinking"
@@ -133,7 +144,7 @@ if [[ "$ENGINE_BACKEND" == "zig" ]]; then
     BUDGET_ARGS=""
     [[ -n "$THINKING_BUDGET" ]] && BUDGET_ARGS="--thinking-budget ${THINKING_BUDGET}"
 
-    HEAD_CMD="docker run -d --name ${CONTAINER_NAME} ${COMMON_ARGS} -v ${HF_CACHE}:/hf:ro -v ${ROOT_DIR}:${ROOT_DIR}:ro -e TF_TP_WORLD=2 -e TF_TP_MASTER=${HEAD_IP} -e TF_TP_PORT=${MASTER_PORT} -e TF_DS_RANK_CACHE=/hf/${DATA_SUB}/rank-cache -e TF_DS_KIT=/hf/${KIT_SUB} -e TENSORFOLD_CUDA_KERNELS=/hf/${KIT_SUB}/aot -e TF_DS_ENGRAM=${ENGRAM_IN_CONTAINER} -e TF_DS_TOKEN_MAP=/hf/${DATA_SUB}/dsv41_token_map.json -e TF_DS_GRAPHS=1 -e TF_DS_HC_SIDE=1 -e TF_DS_L2_PREFETCH=1 -e TF_DS_ENGRAM_AIO=1 -e TF_RDMA_DEVICES=${ROCE_HCAS} ${COMMON_ENV} ${ZIG_IMAGE} tensorfold-native serve ${SERVED_IN_CONTAINER} --backend cuda --host 127.0.0.1 --port ${UPSTREAM_PORT} --name DeepSeek-V4.1-Flash-1017 --context ${CONTEXT} --parallel ${PARALLEL} --max-tokens ${MAX_TOKENS} --temperature 1.0 --top-p 0.95 --top-k 20 ${THINK_FLAG} ${EFFORT_ARGS} ${BUDGET_ARGS}"
+    HEAD_CMD="docker run -d --name ${CONTAINER_NAME} ${COMMON_ARGS} -v ${HF_CACHE}:/hf:ro -v ${ROOT_DIR}:${ROOT_DIR}:ro -e TF_TP_WORLD=2 -e TF_TP_MASTER=${HEAD_IP} -e TF_TP_PORT=${MASTER_PORT} -e TF_DS_RANK_CACHE=/hf/${RANK_CACHE_SUB} -e TF_DS_KIT=/hf/${KIT_SUB} -e TENSORFOLD_CUDA_KERNELS=/hf/${KIT_SUB}/aot -e TF_DS_ENGRAM=${ENGRAM_IN_CONTAINER} -e TF_DS_TOKEN_MAP=/hf/${DATA_SUB}/dsv41_token_map.json -e TF_DS_GRAPHS=1 -e TF_DS_HC_SIDE=1 -e TF_DS_L2_PREFETCH=1 -e TF_DS_ENGRAM_AIO=1 -e TF_RDMA_DEVICES=${ROCE_HCAS} ${COMMON_ENV} ${ZIG_IMAGE} tensorfold-native serve ${SERVED_IN_CONTAINER} --backend cuda --host 127.0.0.1 --port ${UPSTREAM_PORT} --name DeepSeek-V4.1-Flash-1017 --context ${CONTEXT} --parallel ${PARALLEL} --max-tokens ${MAX_TOKENS} --temperature 1.0 --top-p 0.95 --top-k 20 ${THINK_FLAG} ${EFFORT_ARGS} ${BUDGET_ARGS}"
 
     if [[ "$DRY_RUN" == "1" ]]; then
         echo "[dry-run:zig] WORKER ($WORKER_IP):"
@@ -159,10 +170,16 @@ elif [[ "$ENGINE_BACKEND" == "python" ]]; then
 
     run_py_args() {
         local r="$1"
+        local rk_mount
+        if [[ "$r" == "0" ]]; then
+            rk_mount="-v ${HOME}/.cache/huggingface/tensorfold-dsv41/${RANK_CACHE_TAG}/rank-cache:/cache/tf-ds-rank:ro"
+        else
+            rk_mount="-v \$HOME/.cache/dsv41-tensorfold/rank-cache-${RANK_CACHE_TAG}:/cache/tf-ds-rank:ro"
+        fi
         cat <<EOF
 -d --name tfv41-r${r} --gpus all --network host --ipc host --shm-size 32g --oom-score-adj 1000
 --ulimit memlock=-1 --ulimit stack=67108864 --device /dev/infiniband --cap-add IPC_LOCK --cap-add SYS_PTRACE
--v ${MODEL_VIEW}/model:/model:ro -v ${MODEL_VIEW}/engram:/engram:ro -v ${CACHE_DIR}:/cache
+-v ${MODEL_VIEW}/model:/model:ro -v ${MODEL_VIEW}/engram:/engram:ro -v ${CACHE_DIR}:/cache ${rk_mount}
 -e TF_DS_REPLAY=1 -e TF_DS_REPLAY_FLOOR=1 -e TF_DS_PREFILL_CHUNK=2048
 -e TF_DS_RANK_CACHE=/cache/tf-ds-rank -e TF_DS_RANK_CACHE_READERS=32
 -e TF_DS_WARM_LENGTHS=1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,33,131,514,1024,2113 -e TF_DS_ENGRAM=/engram
@@ -219,7 +236,7 @@ fi
 
 log "Starting spark-dsv41-cacheguard daemon on Head and Worker..."
 docker cp "$ROOT_DIR/bin/spark-dsv41-cacheguard" "${HEAD_CNAME}:/usr/local/bin/spark-dsv41-cacheguard"
-docker exec -d "$HEAD_CNAME" /usr/local/bin/spark-dsv41-cacheguard -interval 15s /hf/tensorfold-dsv41/45ee5d0f/rank-cache /hf/hub/models--deepseek-ai--DeepSeek-V4.1-Flash-1017/snapshots/1bae0e1088993b9b82de08f59de5be5a34e42170 /cache/tf-ds-rank /engram
+docker exec -d "$HEAD_CNAME" /usr/local/bin/spark-dsv41-cacheguard -interval 15s "/hf/tensorfold-dsv41/${RANK_CACHE_TAG}/rank-cache" /hf/tensorfold-dsv41/45ee5d0f/rank-cache /hf/hub/models--deepseek-ai--DeepSeek-V4.1-Flash-1017/snapshots/1bae0e1088993b9b82de08f59de5be5a34e42170 /cache/tf-ds-rank /engram
 ssh -o BatchMode=yes "$WORKER_IP" "docker cp \$HOME/spark-dsv41/bin/spark-dsv41-cacheguard ${WORKER_CNAME}:/usr/local/bin/spark-dsv41-cacheguard && docker exec -d ${WORKER_CNAME} /usr/local/bin/spark-dsv41-cacheguard -interval 15s /rank-cache /engram /cache/tf-ds-rank"
 
 log "Starting Spark-DSV41 Go Control Plane on :${PORT} -> http://127.0.0.1:${UPSTREAM_PORT}..."
