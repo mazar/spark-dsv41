@@ -154,8 +154,10 @@ func main() {
 	if len(targets) == 0 {
 		home, _ := os.UserHomeDir()
 		targets = []string{
+			filepath.Join(home, ".cache/huggingface/tensorfold-dsv41/custom-hq/rank-cache"),
 			filepath.Join(home, ".cache/huggingface/tensorfold-dsv41/45ee5d0f/rank-cache"),
 			filepath.Join(home, ".cache/huggingface/hub/models--deepseek-ai--DeepSeek-V4.1-Flash-1017/snapshots/1bae0e1088993b9b82de08f59de5be5a34e42170"),
+			filepath.Join(home, ".cache/dsv41-tensorfold/rank-cache-custom-hq"),
 			filepath.Join(home, ".cache/dsv41-tensorfold/rank-cache-45ee5d0f"),
 			filepath.Join(home, ".cache/dsv41-tensorfold/engram-1bae0e10"),
 			filepath.Join(home, "models/deepseek-v41-1017-exl3-2.9bpw/engram"),

@@ -1,5 +1,22 @@
 # Changelog — `Spark-DSV41`
 
+## [1.1.0] — 2026-10-25
+
+### Added
+- **Custom Hybrid EXL3 RankCache Quantizer ([`scripts/quantize_rank_cache.py`](file:///home/massoud/spark-dsv41/scripts/quantize_rank_cache.py)):**
+  - Re-quantizes `1,579` critical matrices per rank directly from the official unquantized `deepseek-ai/DeepSeek-V4.1-Flash-1017` (`1bae0e1088993b9b82de08f59de5be5a34e42170`) `FP8` / `BF16` / `FP4` source weights on GPU (`exllamav3_ext` `mul1` Viterbi trellis encoder) while preserving the calibrated Hadamard scale vectors (`suh`, `svh`):
+    1. **8.0 bpw (`K=8`, `K2=16`)** for all `363` rank-local Attention (`wq_a`, `wq_b`, `wkv`, `wo_a.slice.*`, `wo_b`), MLA Compressor (`wkv`, `wgate`), Sparse Indexer (`wq_b`), Engram (`engram.wkv`), DSpark MTP (`mtp.0.main_proj`, `mtp.0..2.attn.*`), and `head` matrices (`16x–240x` MSE reduction, relative L2 error `0.47%–0.54%`, `cos_sim = 0.999989`).
+    2. **4.0 bpw (`K=4`, `K2=8`)** standardization across all `21` 5-bit `shared_experts.{w1,w2,w3}` layers (`Layers 0..10` and `30..39`), ensuring `k2_gu[1] <= 8` and `k2_d[1] <= 8` in `weights.zig` (`Loader.experts`) so TensorFold's fastest fused prompt kernels (`grouped_mma3_kernel` and `grouped_down3_kernel`) are unlocked on **all 40 layers** (`2,416.1 tok/s` prefill at `10K` tokens).
+    3. **3.0 bpw (`K=3`, `K2=6`)** upgrade for the `384` highest-impact routed experts in the `Layers 18..22` `2.0 bpw` cliff (`top 128` in Layer 20 CSA2 source + `top 64` each in Layers 18, 19, 21, 22, ranked deterministically by `(gate.bias - min(gate.bias) + 0.1) * ||w2.svh||_2`), cutting relative L2 error from `28.99%` to `13.20%` (`4.8x` MSE reduction).
+  - Automatic `RANK_CACHE_TAG=custom-hq` selection in [`scripts/start_engine.sh`](file:///home/massoud/spark-dsv41/scripts/start_engine.sh) and [`pkg/cacheguard/main.go`](file:///home/massoud/spark-dsv41/pkg/cacheguard/main.go).
+- **Verified `tool-eval-bench` Quality Improvement (`2026-10-25T16-44-19.930138Z_6e9e8f3d`):**
+  - On the 88-scenario benchmark (`TC-01..TC-88`), score improved from **`93 / 100` (`164 / 176` pts, 11/16 categories at 100%)** on stock `Mia EAQ 2.9 bpw` to **`95 / 100` (`168 / 176` pts, 13/16 categories at 100%)**, flipping `TC-40` (*Domain Confusion*), `TC-60` (*Cross-Turn Sleeper Injection*), `TC-62` (*5-Turn Research Chain*), and `TC-80` (*Preconditioned Update Safety*, ★★★★★) to **`2/2` PASS**.
+  - On the expanded 97-scenario `tool-eval-bench v2.8.1` suite (`TC-01..TC-97`), scored **`93 / 100` (`180 / 194` pts, `★★★★★ Excellent`)** with **`13 / 16` categories at 100%** (`Context & State` and `Toolset Scale` both raised to `100%`).
+- **Industry-Standard Coding Intelligence Benchmarks ([`scripts/run_coding_benchmarks.py`](file:///home/massoud/spark-dsv41/scripts/run_coding_benchmarks.py)):**
+  - Evaluated `Spark-DSV41 (custom-hq)`, `Spark-DSV41 (stock 2.9 bpw)`, and `Spark-GLM53 (NVFP4)` head-to-head across `164` `EvalPlus HumanEval+` tasks and `30` stratified `LiveCodeBench v6` competitive programming tasks (`10 Easy`, `10 Medium`, `10 Hard`):
+    - **`LiveCodeBench v6` (`30` tasks):** `Spark-DSV41 (custom-hq)` achieved **`93.33%` (`28 / 30` — `10/10 Easy`, `10/10 Medium`, `8/10 Hard`)**, outperforming both `Spark-DSV41 (stock 2.9 bpw)` (`90.00%`, `27 / 30`) and `Spark-GLM53 (NVFP4)` (`76.67%`, `23 / 30`) while eliminating circular `<think>` timeouts (`40%–51%` fewer `<think>` tokens on Hard/Medium tasks).
+    - **`EvalPlus HumanEval+` (`164` tasks):** All three tied at **`96.34%` (`158 / 164`)** on Base `HumanEval` (`90.85%` / `91.46%` / `92.68%` on `80x` Extra Tests), with `Spark-DSV41` completing all `164` tasks in **`243.5–264.0 s`** vs **`654.2 s`** on `Spark-GLM53` (**2.48x–2.69x faster**).
+
 ## [1.0.0] — 2026-10-24
 
 ### Added
