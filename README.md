@@ -29,11 +29,11 @@ It pairs the fastest community TensorFold engines ([`MiaAI-Lab/DeepSeek-v4.1-Fla
 | Metric (Hardmode, Seed 42) | `MiaAI-Lab` `GLM-5.3-Flash-EXL3` | [`Spark-GLM53`](https://github.com/mazar/spark-glm53) (`NVFP4` + `B12X`) | `Spark-DSV41` (Stock `2.9 bpw` `45ee5d0f`) | **`Spark-DSV41` (`custom-hq` Hybrid EXL3)** | `custom-hq` Highlights |
 | :--- | :---: | :---: | :---: | :---: | :--- |
 | **88-Scenario Score (`TC-01..TC-88`)** | `94 / 100` (`165 / 176`) | **`95 / 100` (`168 / 176`)** | `93 / 100` (`164 / 176`) | **`95 / 100` (`168 / 176`)** | **Matches `Spark-GLM53` accuracy at ~1.85x speed** |
-| **97-Scenario Score (`v2.8.1`, `TC-01..TC-97`)** | — | — | — | **`93 / 100` (`180 / 194`)** | **★★★★★ Excellent** on expanded 97-scenario suite |
-| **Categories at 100%** | `11 / 16` | `14 / 16` | `11 / 16` | **`13 / 16`** | **`Context & State` (`20/20`)** & **`Toolset Scale` (`8/8`)** raised to **100%** |
-| **Deployability Score ($\alpha=0.7$)** | `76 / 100` | `77 / 100` | **`82 / 100`** | **`81 / 100`** | **+4–5 pts higher deployability than GLM-5.3** |
-| **Responsiveness Score** | `34 / 100` | `35 / 100` | **`55 / 100`** | **`53 / 100`** | **+18–20 pts higher responsiveness** |
-| **Median Turn Latency** | `4,811 ms` (`4.81 s`) | `4,343 ms` (`4.34 s`) | **`2,600 ms` (`2.60 s`)** | **`2,800 ms` (`2.80 s`)** | **-35.5% to -40.1% faster per turn** |
+| **97-Scenario Score (`v2.8.1`, `TC-01..TC-97`)** | — | **`93 / 100` (`180 / 194`)** | `92 / 100` (`178 / 194`) | **`93 / 100` (`180 / 194`)** | **Ties `Spark-GLM53` (`180 / 194`, ★★★★★ Excellent) while running ~1.57x faster (`2.8s` vs `4.4s` median turn)** |
+| **Categories at 100% (`88` / `97` scenarios)** | `11 / 16` (`88`) | `14 / 16` (`88`) / `12 / 16` (`97`) | `11 / 16` (`88` & `97`) | **`13 / 16` (`88` & `97`)** | **`Context & State` (`20/20`)** & **`Toolset Scale` (`8/8`)** raised to **100%** |
+| **Deployability Score ($\alpha=0.7$)** | `76 / 100` | `77 / 100` (`88`) / `76 / 100` (`97`) | **`82 / 100`** (`88`) / **`81 / 100`** (`97`) | **`81 / 100`** | **+5 pts higher deployability than `Spark-GLM53` on 97-scenario suite** |
+| **Responsiveness Score** | `34 / 100` | `35 / 100` (`88`) / `36 / 100` (`97`) | **`55 / 100`** | **`53 / 100`** | **+17–18 pts higher responsiveness** |
+| **Median Turn Latency** | `4,811 ms` (`4.81 s`) | `4,343 ms` (`88`) / `4,400 ms` (`97`) | **`2,600 ms` (`2.60 s`)** | **`2,800 ms` (`2.80 s`)** | **-36.4% to -40.1% faster per turn** |
 | **8K Prompt Prefill (`10,012` tokens)** | ~1,950 tok/s | 3,600+ tok/s | ~2,100 tok/s | **`2,416.1 tok/s`** (`4.14 s`) | `4.0 bpw` `shared_experts` unlocks `grouped_mma3_kernel` on all 40 layers |
 | **Structured Output (Category O)** | `83%` (`10 / 12`) | `100%` (`12 / 12`) | **`83%` (`10 / 12`)** | **`83%` (`10 / 12`)** | Up from `33%` (`4 / 12` HTTP 400) via `spark-dsv41-gateway` `response_format` translation |
 | **Post-Suite Free UMA (`MemAvailable`)** | — | `4.19 GiB` / `6.47 GiB` | `3.83 GiB` / `6.57 GiB` | **`2.0 GiB` (Head) / `4.8 GiB` (Worker)** | Zero OOMs (`3.6 GiB` / `3.2 GiB` `buff/cache` via `spark-dsv41-cacheguard`) |
