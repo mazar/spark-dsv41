@@ -1,0 +1,13 @@
+# Copy to scripts/local.sh (not in git) and fill in this setup's values; scripts/config.sh reads it first.
+WORKER=user@192.0.2.2          # ssh target of the second Spark (key-based: ssh-copy-id user@192.0.2.2)
+# FABRIC_PEER=192.0.2.12       # the worker's CX7 address, when WORKER is reached over another network
+# NFS_SERVER=192.0.2.1         # the head's address the worker mounts the checkpoint from (default: its address on the link)
+# HF_CACHE=/models/hf          # this Spark's Hugging Face cache, if it is not ~/.cache/huggingface (it needs ~505 GB free)
+# WORKER_ENGRAM_DIR='$HOME/.cache/dsv41-tensorfold/engram-1bae0e10'     # on the worker: Engram's tables (~203 GB)
+# WORKER_CACHE_DIR='$HOME/.cache/dsv41-tensorfold/rank-cache-c178a012'  # on the worker: rank 1's weight file (~106 GB)
+# MEMGUARD_GIB=2.5            # memguard's floor (GiB of MemAvailable), held MEMGUARD_HOLD_S=4 s before a kill; MEMGUARD_HARD_GIB=1 kills at once. README, Memory and safety
+# MODEL_ID=Mia-AiLab/DeepSeek-V4.1-Flash-1017-EAQ-v1-2.9-bpw   # a checkpoint already in your cache under the repo's earlier name (the repo was renamed to ...-EXL3-EAQ-v1-2.9-bpw;
+# MODEL_REVISION=<40-hex commit in that folder>                # the Hub redirects the old name). Set both to what ~/.cache/huggingface/hub holds, or main's default (the renamed repo @ 6d54be4f, 196 GiB) is downloaded
+# ABLIT=0                     # 1: matching Keys overlay on Mia EAQ 2.9 bpw; needs your HF token AND access below
+# HF_TOKEN=hf_...              # HF read token (or use hf auth login on the head); never commit your token
+# ABLIT=1 requires access: https://huggingface.co/drowzeys/keys-DeepSeek-V4.1-Flash-1017-Abliterated

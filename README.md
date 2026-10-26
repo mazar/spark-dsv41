@@ -82,6 +82,16 @@ spark-dsv41/
 │   ├── gateway/                  # Go Control Plane (:8888 -> 127.0.0.1:8000) source & unit tests
 │   └── cacheguard/               # Go/C POSIX_FADV_DONTNEED page-cache eviction daemon
 ├── scripts/
+├── model/
+│   └── chat_template.jinja       # Official DeepSeek-V4.1-Flash-1017 DSML + thinking chat template
+├── zig/
+│   ├── Dockerfile                # Builds tensorfold-dsv41:exl3-tp2-625d420e24a4 from TensorFold Zig + patches
+│   └── patches/                  # 7 Zig engine patches (idx split, engram lanes, call gate, interleave, RDMA nap)
+├── scripts/
+│   ├── setup_from_scratch.sh     # One-command bare-metal 2x Spark bootstrap -> custom-hq -> start_engine
+│   ├── prepare.sh                # Downloads 45ee5d0f + 1bae0e10 Engram tables, builds Zig image, kit, & NFS
+│   ├── config.sh                 # Pin definitions, environment defaults, and local.sh / .env loader
+│   ├── nodes.sh                  # ConnectX-7 twin-rail discovery, RoCE GID v2 verification, & NFS volume setup
 │   ├── tune_sparks.sh            # Dual-rail RoCE v2 (MTU 4200), 3003 MHz GPU clock lock, UMA hygiene
 │   ├── build_custom_hq.sh        # One-command parallel GPU RankCache upgrader (45ee5d0f -> custom-hq)
 │   ├── quantize_rank_cache.py    # Streams 1bae0e10 source slices via HTTP Range & encodes EXL3 on GPU
@@ -93,20 +103,25 @@ spark-dsv41/
 
 ---
 
-## 4. Quickstart
+## 4. Quickstart (100% Self-Contained from Scratch)
 
-### Prerequisites
-Prepare the `tensorfold-dsv41` image, 98.9 GiB Rank Cache, and 203 GB Engram shards once using either [`MiaAI-Lab/DeepSeek-v4.1-Flash-1017-2x-DGX-Sparks`](https://github.com/MiaAI-Lab/DeepSeek-v4.1-Flash-1017-2x-DGX-Sparks) (`ENGINE_BACKEND=zig`, default) or [`Elevatormusic/DeepSeek-V4.1-Flash-1017-EXL3-TensorFold-2x-DGX-Spark`](https://github.com/Elevatormusic/DeepSeek-V4.1-Flash-1017-EXL3-TensorFold-2x-DGX-Spark) (`ENGINE_BACKEND=python`).
+This repository is completely self-contained and includes all Dockerfiles, Zig engine patches, checkpoint & Engram downloaders, RoCE v2 / UMA cluster tuners, and the GPU EXL3 `custom-hq` RankCache upgrader needed to prepare a bare-metal **2x NVIDIA DGX Spark (`GB10`)** cluster from scratch.
 
-### (Optional, Recommended) Upgrade RankCache to `custom-hq` (`8b` Attention + `4b` Shared Experts + `3b` L18–22 Experts)
-No 690 GB source checkpoint download is required — `build_custom_hq.sh` streams only the exact ~12 GiB of unquantized `deepseek-ai/DeepSeek-V4.1-Flash-1017` (`1bae0e10`) slices over HTTP Range requests and encodes them in parallel on both Sparks' GPUs in ~31 minutes:
+### Option A: One-Command Bare-Metal Setup & Launch
+On a fresh 2x DGX Spark cluster with passwordless SSH between Head (`10.100.240.1`) and Worker (`10.100.240.2` or set `WORKER_IP=<worker_ip>`):
 ```bash
-cd ~/spark-dsv41
-./scripts/build_custom_hq.sh
+git clone https://github.com/mazar/spark-dsv41.git
+cd spark-dsv41
+./scripts/setup_from_scratch.sh
 ```
+This automatically executes all 4 stages (skipping any stage already completed):
+1. **`./scripts/tune_sparks.sh --verify`:** Configures dual-rail ConnectX-7 RoCE v2 (`MTU 4200`, `GID_INDEX=3`), locks GB10 clocks to `3003 MHz`, and reclaims unified memory.
+2. **`./scripts/prepare.sh`:** Builds/pulls `tensorfold-dsv41:exl3-tp2-625d420e24a4` (from `zig/Dockerfile` + `zig/patches/`) across both Sparks, downloads `Mia-AiLab/DeepSeek-V4.1-Flash-1017-EXL3-EAQ-v1-2.9-bpw` (`45ee5d0f`, 196 GiB) + `deepseek-ai/DeepSeek-V4.1-Flash-1017` (`1bae0e10` Engram shards `47` & `48`, 203 GB) + `kit-abe07c7d`, sets up the Worker's `dsv41-1017-exl3-hf` NFS volume, and builds the initial `45ee5d0f` Rank 0 and Rank 1 caches.
+3. **`./scripts/build_custom_hq.sh`:** Streams only the exact ~12 GiB of unquantized `FP8`/`BF16`/`FP4` source slices from `deepseek-ai/DeepSeek-V4.1-Flash-1017` (`1bae0e10`) over HTTP Range requests and encodes them in parallel on both Sparks' GPUs (~31 minutes) to produce the **`custom-hq`** (`8.0 bpw` Attention/MLA/Indexer/MTP/LM-Head + `4.0 bpw` Shared Experts + `3.0 bpw` L18–22 Hot Experts) RankCache.
+4. **`./scripts/start_engine.sh`:** Compiles the Go `spark-dsv41-gateway` and `spark-dsv41-cacheguard` binaries, locks the `100.81 GiB` `custom-hq` RankCache in UMA, and starts the full `Spark-DSV41` stack on port `8888`.
 
-### Start `Spark-DSV41` (Default Fast Zig Backend)
-`start_engine.sh` automatically selects `RANK_CACHE_TAG=custom-hq` when present (or falls back to `RANK_CACHE_TAG=45ee5d0f`):
+### Option B: Step-by-Step / Daily Launch
+`./scripts/start_engine.sh` also auto-detects missing prerequisites (running `prepare.sh` and `build_custom_hq.sh` automatically on first run if needed) and selects `RANK_CACHE_TAG=custom-hq` by default:
 ```bash
 cd ~/spark-dsv41
 ./scripts/start_engine.sh
