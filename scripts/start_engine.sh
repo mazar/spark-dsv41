@@ -109,6 +109,17 @@ fi
 mkdir -p "$ROOT_DIR/logs"
 
 # 3. Launch Backend Engine on internal port $UPSTREAM_PORT (8000)
+if [[ "$DRY_RUN" != "1" ]]; then
+    if ! compgen -G "$HOME/.cache/huggingface/tensorfold-dsv41/45ee5d0f/rank-cache/rank0of2-*.bin" >/dev/null 2>&1; then
+        log "Initial 45ee5d0f checkpoint / RankCache not found; running ./scripts/prepare.sh..."
+        WORKER="$WORKER_IP" "$ROOT_DIR/scripts/prepare.sh"
+    fi
+    if [[ -z "${RANK_CACHE_TAG:-}" ]] && ! compgen -G "$HOME/.cache/huggingface/tensorfold-dsv41/custom-hq/rank-cache/rank0of2-*.bin" >/dev/null 2>&1; then
+        log "Custom Hybrid EXL3 RankCache (custom-hq) not built yet; running ./scripts/build_custom_hq.sh..."
+        WORKER_IP="$WORKER_IP" "$ROOT_DIR/scripts/build_custom_hq.sh"
+    fi
+fi
+
 RANK_CACHE_TAG="${RANK_CACHE_TAG:-}"
 if [[ -z "$RANK_CACHE_TAG" ]]; then
     if compgen -G "$HOME/.cache/huggingface/tensorfold-dsv41/custom-hq/rank-cache/rank0of2-*.bin" >/dev/null 2>&1; then

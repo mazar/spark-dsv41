@@ -41,10 +41,29 @@ log() { echo -e "\033[1;36m[build-custom-hq]\033[0m $*"; }
 die() { echo -e "\033[1;31m[build-custom-hq ERROR]\033[0m $*" >&2; exit 1; }
 
 HEAD_IN=$(ls "$HOME"/.cache/huggingface/tensorfold-dsv41/45ee5d0f/rank-cache/rank0of2-*.bin 2>/dev/null | head -n 1 || true)
-[[ -n "$HEAD_IN" ]] || die "Head baseline RankCache not found in ~/.cache/huggingface/tensorfold-dsv41/45ee5d0f/rank-cache/"
-
 WORKER_IN=$(ssh -o BatchMode=yes "$WORKER_IP" 'ls $HOME/.cache/dsv41-tensorfold/rank-cache-45ee5d0f/rank1of2-*.bin 2>/dev/null | head -n 1' || true)
+
+if [[ -z "$HEAD_IN" || -z "$WORKER_IN" ]]; then
+    log "Baseline 45ee5d0f RankCache not found yet; running ./scripts/prepare.sh first..."
+    WORKER="$WORKER_IP" "$ROOT_DIR/scripts/prepare.sh"
+    HEAD_IN=$(ls "$HOME"/.cache/huggingface/tensorfold-dsv41/45ee5d0f/rank-cache/rank0of2-*.bin 2>/dev/null | head -n 1 || true)
+    WORKER_IN=$(ssh -o BatchMode=yes "$WORKER_IP" 'ls $HOME/.cache/dsv41-tensorfold/rank-cache-45ee5d0f/rank1of2-*.bin 2>/dev/null | head -n 1' || true)
+fi
+
+[[ -n "$HEAD_IN" ]] || die "Head baseline RankCache not found in ~/.cache/huggingface/tensorfold-dsv41/45ee5d0f/rank-cache/"
 [[ -n "$WORKER_IN" ]] || die "Worker baseline RankCache not found on $WORKER_IP:~/.cache/dsv41-tensorfold/rank-cache-45ee5d0f/"
+
+if ! docker image inspect "$QUANT_IMAGE" >/dev/null 2>&1; then
+    log "Pulling EXL3 GPU quantizer image ($QUANT_IMAGE) on Head..."
+    docker pull "$QUANT_IMAGE"
+fi
+if ! ssh -o BatchMode=yes "$WORKER_IP" "docker image inspect '$QUANT_IMAGE' >/dev/null 2>&1"; then
+    log "Ensuring EXL3 GPU quantizer image ($QUANT_IMAGE) on Worker ($WORKER_IP)..."
+    ssh -o BatchMode=yes "$WORKER_IP" "docker pull '$QUANT_IMAGE'" || {
+        log "Transferring $QUANT_IMAGE from Head to Worker via docker save | docker load..."
+        docker save "$QUANT_IMAGE" | ssh -o BatchMode=yes "$WORKER_IP" "docker load"
+    }
+fi
 
 HEAD_ENGRAM_DIR="$HOME/.cache/huggingface/hub/models--deepseek-ai--DeepSeek-V4.1-Flash-1017/snapshots/${STOCK_REV}"
 mkdir -p "$HEAD_ENGRAM_DIR"
